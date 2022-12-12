@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://b2p03hdyvoa40"]
+
+[ext_resource type="Shader" path="res://terrain.gdshader" id="1_tgnc8"]
+[ext_resource type="Texture2D" uid="uid://7fhepve1m3u" path="res://gaea_test/Diffuse.exr" id="2_6vlat"]
+[ext_resource type="Texture2D" uid="uid://ct2btwa0uvmhb" path="res://gaea_test/Final_Island.exr" id="3_83y0e"]
+[ext_resource type="Texture2D" uid="uid://502t1st87dx4" path="res://gaea_test/Normal Map.exr" id="4_a2edi"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_tgnc8")
+shader_parameter/_debug_shader_enable = false
+shader_parameter/_diffuse_color_blend = false
+shader_parameter/diffuse_map = ExtResource("2_6vlat")
+shader_parameter/height_map = ExtResource("3_83y0e")
+shader_parameter/height_offset = 0.0
+shader_parameter/height_scale = 300.0
+shader_parameter/metallic = 0.0
+shader_parameter/normal_basis = Basis(1, 0, 0, 0, 0, 0, 0, 0, 1)
+shader_parameter/normal_enable_vert = true
+shader_parameter/normal_frag_scale = 0.0
+shader_parameter/normal_map = ExtResource("4_a2edi")
+shader_parameter/roughness = 1.0
+shader_parameter/target_position = Vector3(776.28, 0, -898.452)
+shader_parameter/uv_scale = 1.0
