@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://5g7byb24vjxk"]
+[gd_scene load_steps=17 format=3 uid="uid://5g7byb24vjxk"]
 
 [ext_resource type="Script" path="res://clipmap.gd" id="1_o76mq"]
 [ext_resource type="Script" path="res://player_controller.gd" id="1_oh62h"]
@@ -48,6 +48,9 @@ size = Vector3(0.25, 0.1, 0.1)
 [sub_resource type="BoxMesh" id="BoxMesh_4gl6s"]
 size = Vector3(0.25, 1, 0.25)
 
+[sub_resource type="BoxMesh" id="BoxMesh_2kfc4"]
+size = Vector3(0.2, 0.2, 0.2)
+
 [sub_resource type="HeightMapShape3D" id="HeightMapShape3D_dcjgo"]
 map_width = 100
 map_depth = 100
@@ -68,10 +71,10 @@ mass = 50.0
 continuous_cd = true
 can_sleep = false
 script = ExtResource("1_oh62h")
-move_speed_max = 15.0
+move_speed_max = 5.0
+move_stance_spread = null
 move_accel_dot = SubResource("Curve_p7bgf")
 move_accel_max_force_dot = SubResource("Curve_wiwsd")
-move_angle_multiplier = 0.5
 move_jump_height = 1.0
 move_jetpack_force = 500.0
 move_lean_force = 0.1
@@ -98,13 +101,29 @@ mesh = SubResource("BoxMesh_sqqqe")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.2, 0.4, -0.5)
 mesh = SubResource("BoxMesh_sqqqe")
 
-[node name="MeshInstance3D5" type="MeshInstance3D" parent="Player/MeshInstance3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, -1, 0)
-mesh = SubResource("BoxMesh_4gl6s")
+[node name="LegL" type="Node3D" parent="Player/MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 0, 1)
 
-[node name="MeshInstance3D6" type="MeshInstance3D" parent="Player/MeshInstance3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.25, -1, 0)
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Player/MeshInstance3D/LegL"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, -0.5)
 mesh = SubResource("BoxMesh_4gl6s")
+skeleton = NodePath("../..")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="Player/MeshInstance3D/LegL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.225363, -0.0999756)
+mesh = SubResource("BoxMesh_2kfc4")
+
+[node name="LegR" type="Node3D" parent="Player/MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 1)
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Player/MeshInstance3D/LegR"]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, -0.5)
+mesh = SubResource("BoxMesh_4gl6s")
+skeleton = NodePath("../..")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="Player/MeshInstance3D/LegR"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.225363, -0.0999756)
+mesh = SubResource("BoxMesh_2kfc4")
 
 [node name="AxisLock" type="Node3D" parent="Player"]
 
