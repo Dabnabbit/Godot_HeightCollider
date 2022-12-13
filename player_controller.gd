@@ -22,12 +22,15 @@ var _mouse_click_delay : float = 0.1
 @export_category("Movement")
 @export var move_relative_to_camera : bool = true
 @export var move_speed_max := 10.0
+@export var move_stance_spread := 0.25
 @export var move_accel := 25.0
 #@export_exp_easing("attenuation") var move_accel_dot := 1.0 #// This doesn't QUITE work for what we need...
 @export var move_accel_dot := Curve.new() #// Should go from xy(-1,2) to (0,1) to (1,1) OR xy(0,2) to (0.5,1) to (1,1)
 @export var move_accel_max_force := 150.0
 @export var move_accel_max_force_dot := Curve.new() #// Should go from xy(-1,2) to (0,1) to (1,1)
 @export var move_angle_multiplier : float = 1.0
+@export var move_angle_dot := Curve.new() #// Should go from xy(-1,2) to (0,1) to (1,1)
+
 @export var move_snap_length : float = 0.4
 @export_category("Jumping")
 @export var move_jump_height : float = 2.0
@@ -50,15 +53,20 @@ var _mouse_click_delay : float = 0.1
 @export var move_lean_force : float = 0.5
 
 var _mesh : MeshInstance3D
+var _mesh_leg_l : Node3D
+var _mesh_leg_r : Node3D
 var _axis_lock : Node3D
 var _camera_pivot : Node3D
 var _camera : Camera3D
-var _ray_node1 : RayCast3D
-var _ray_node2 : RayCast3D
+var _ray_node_l : RayCast3D
+var _ray_node_r : RayCast3D
 
 var _hover_ray_last_dist : float
 var _move_target_velocity : Vector3
 var _move_target_rotation : Vector3 #//-TODO: Implement better interpolated rotation
+var _move_leg_l_position : Vector3
+var _move_leg_r_position : Vector3
+var _move_landing_recovery_time : float = 0.0
 var _move_disable_timer : float = 0.0
 var _time_on_floor : float = 0.0
 var _last_on_floor : float = 0.0
@@ -80,7 +88,7 @@ func player_is_jumping():
 	return _is_jumping
 
 func player_is_able_to_jump():
-	if _last_on_floor < move_jump_coyote_time and _last_jump <= 0.0 and _move_disable_timer <= 0.0 and _time_on_floor > 0.35 and player_is_on_floor():
+	if _last_on_floor < move_jump_coyote_time and _last_jump <= 0.0 and _move_disable_timer <= 0.0 and _time_on_floor > 0.35 and _move_landing_recovery_time <= 0.0 and player_is_on_floor():
 		return true
 	else:
 		return false
@@ -90,13 +98,13 @@ func player_is_on_floor():
 	if _is_jumping and velocity.y > 0: #//- If currenting on the upward motion of a jump, should NOT be on floor
 		#print("probably should say not on floor here...")
 		return false
-	if _is_jumping or _is_jetting:
+	if _is_jumping or _is_jetting:# or _time_on_floor < 0.2:
 		snap = 0.0
 	var collision_distance : float = player_get_collision_distance()
 	#if collision_distance - _hover_ray_last_dist > 0.2:
 	if collision_distance - _hover_ray_last_dist > move_snap_length*0.5:
 		DebugTools.draw_cube(position-Vector3(0,hover_spring_height,0), rotation, 0.5, Color.RED, 10.0)
-		print("Ramp!")
+		#print("Ramp!")
 		snap = 0.0
 	_hover_ray_last_dist = collision_distance
 	if collision_distance <= hover_spring_height + snap: #_hover_ray_last_dist
@@ -114,66 +122,122 @@ func player_get_time_on_floor():
 	return _time_on_floor
 
 func player_is_ray_colliding():
-	if hover_ray_predictive and _ray_node2.is_colliding():
-		return true;
-	elif !hover_ray_predictive and _ray_node1.is_colliding():
+	if _ray_node_l.is_colliding() or _ray_node_r.is_colliding():
 		return true
 	return false
 
 func player_get_collision_distance(y_only : bool = true):
 	if y_only:
-		var ray_dist :float = _ray_node1.get_global_position().y - _ray_node1.get_collision_point().y
-		if hover_ray_predictive:
-			var ray_dist2 : float = _ray_node2.get_global_position().y - _ray_node2.get_collision_point().y
-#			if absf(ray_dist2 - ray_dist) > 0.02:
-#				print(ray_dist, ", ", ray_dist2, " [ ", (ray_dist+ray_dist2)*0.5, " |VS| ", minf(ray_dist, ray_dist2), " ] ")
-			return ray_dist2
-		return ray_dist
+		var ray_dist_l :float = _ray_node_l.get_global_position().y - _ray_node_l.get_collision_point().y
+		var ray_dist_r : float = _ray_node_r.get_global_position().y - _ray_node_r.get_collision_point().y
+		return (ray_dist_l+ray_dist_r)*0.5
 	else:
-		var ray_dist : float = _ray_node1.get_global_position().distance_to(_ray_node1.get_collision_point())
-		if hover_ray_predictive:
-			var ray_dist2 : float = _ray_node2.get_global_position().distance_to(_ray_node2.get_collision_point())
-			return ray_dist2
-		return ray_dist
+		var ray_dist_l : float = _ray_node_l.get_global_position().distance_to(_ray_node_l.get_collision_point())
+		var ray_dist_r : float = _ray_node_r.get_global_position().distance_to(_ray_node_r.get_collision_point())
+		return (ray_dist_l+ray_dist_r)*0.5
+
+func player_get_collision_point(debug : bool = false):
+	var collision_point_l : Vector3
+	var collision_point_r : Vector3
+	if _ray_node_l.is_colliding() and _ray_node_r.is_colliding():
+		collision_point_l = _ray_node_l.get_collision_point()
+		collision_point_r = _ray_node_r.get_collision_point()
+		if debug:
+			DebugTools.draw_cube(collision_point_l, Vector3.ZERO, 0.2, Color.SPRING_GREEN)
+			DebugTools.draw_cube(collision_point_r, Vector3.ZERO, 0.2, Color.ORANGE_RED)
+		return (collision_point_l + collision_point_r)*0.5
+	elif _ray_node_l.is_colliding():
+		collision_point_l = _ray_node_l.get_collision_point()
+		if debug:
+			DebugTools.draw_cube(collision_point_l, Vector3.ZERO, 0.2, Color.SPRING_GREEN)
+		return collision_point_l
+	elif _ray_node_r.is_colliding():
+		collision_point_r = _ray_node_r.get_collision_point()
+		if debug:
+			DebugTools.draw_cube(collision_point_r, Vector3.ZERO, 0.2, Color.ORANGE_RED)
+		return collision_point_r
+	else:
+		return Vector3.ZERO
 
 func player_get_collision_normal():
-	var ray_node : RayCast3D = _ray_node1
-	if hover_ray_predictive:
-		ray_node = _ray_node2
-	if ray_node.is_colliding():
-		return ray_node.get_collision_normal()
+	#var ray_node : RayCast3D = _ray_node_l
+	if _ray_node_l.is_colliding() and _ray_node_r.is_colliding():
+		return (_ray_node_l.get_collision_normal() + _ray_node_r.get_collision_normal()).normalized()
+	elif _ray_node_l.is_colliding():
+		return _ray_node_l.get_collision_normal()
+	elif _ray_node_r.is_colliding():
+		return _ray_node_r.get_collision_normal()
 	else:
 		return Vector3.UP
 
 func _player_initialize_ray():
-	_ray_node1 = RayCast3D.new()
-	_ray_node2 = RayCast3D.new()
-	_ray_node1.set_name("RayCastDown")
-	_ray_node2.set_name("RayCastPredict")
-	_ray_node1.add_exception(self)
-	_ray_node2.add_exception(self)
-	_ray_node1.set_exclude_parent_body(true)
-	_ray_node2.set_exclude_parent_body(true)
-	_ray_node1.set_collide_with_areas(true)
-	_ray_node2.set_collide_with_areas(true)
-	_ray_node1.set_collide_with_bodies(true)
-	_ray_node2.set_collide_with_bodies(true)
-	_ray_node1.set_debug_shape_custom_color(Color.NAVY_BLUE)
-	_ray_node2.set_debug_shape_custom_color(Color.DEEP_SKY_BLUE)
-	_ray_node1.set_debug_shape_thickness(4)
-	_ray_node2.set_debug_shape_thickness(2)
-	_ray_node1.set_target_position(hover_ray_vector * hover_ray_len)
-	_ray_node2.set_target_position(hover_ray_vector * hover_ray_len)
-	_axis_lock.add_child(_ray_node1)
-	_axis_lock.add_child(_ray_node2)
+	_ray_node_l = RayCast3D.new()
+	_ray_node_r = RayCast3D.new()
+	_ray_node_l.set_name("RayCastDown")
+	_ray_node_r.set_name("RayCastPredict")
+	_ray_node_l.add_exception(self)
+	_ray_node_r.add_exception(self)
+	_ray_node_l.set_exclude_parent_body(true)
+	_ray_node_r.set_exclude_parent_body(true)
+	_ray_node_l.set_collide_with_areas(true)
+	_ray_node_r.set_collide_with_areas(true)
+	_ray_node_l.set_collide_with_bodies(true)
+	_ray_node_r.set_collide_with_bodies(true)
+	_ray_node_l.set_debug_shape_custom_color(Color.DARK_RED)
+	_ray_node_r.set_debug_shape_custom_color(Color.DARK_GREEN)
+	_ray_node_l.set_debug_shape_thickness(4)
+	_ray_node_r.set_debug_shape_thickness(4)
+	_ray_node_l.set_position(Vector3.LEFT*move_stance_spread) #//-This is backwards... I think because of the -Z axis
+	_ray_node_r.set_position(Vector3.RIGHT*move_stance_spread)
+	_ray_node_l.set_target_position(hover_ray_vector * hover_ray_len)
+	_ray_node_r.set_target_position(hover_ray_vector * hover_ray_len)
+	_axis_lock.add_child(_ray_node_l)
+	_axis_lock.add_child(_ray_node_r)
 
 func _player_update_ray(_delta : float):
 	var velocity_input :=  velocity * Vector3(1,0,1)
 	velocity_input *= _delta
 	#var ray_target : Vector3 = hover_ray_vector * hover_ray_len
-	var ray_target_new : Vector3 = ((hover_ray_vector * hover_spring_height) + velocity_input).normalized()
+	var ray_target_l : Vector3 = ((hover_ray_vector * hover_spring_height) + velocity_input).normalized()
+	var ray_target_r : Vector3 = ((hover_ray_vector * hover_spring_height) + velocity_input).normalized()
 	#DebugTools.draw_cube(position + ray_target_new * hover_spring_height, rotation, 0.2, Color.GREEN_YELLOW)
-	_ray_node2.set_target_position(ray_target_new * hover_ray_len)
+	_ray_node_l.set_target_position(ray_target_l * hover_ray_len)
+	_ray_node_r.set_target_position(ray_target_r * hover_ray_len)
+
+func _player_update_legs(_delta, debug : bool = false):
+	if _is_jumping or _is_jetting:
+		return
+	var collision_point_l : Vector3 = _move_leg_l_position
+	var collision_point_r : Vector3 = _move_leg_l_position
+	if _ray_node_l.is_colliding() and _ray_node_r.is_colliding():
+		collision_point_l = _ray_node_l.get_collision_point()
+		collision_point_r = _ray_node_r.get_collision_point()
+	elif _ray_node_l.is_colliding():
+		collision_point_l = _ray_node_l.get_collision_point()
+	elif _ray_node_r.is_colliding():
+		collision_point_r = _ray_node_r.get_collision_point()
+	else:
+		return
+	var dist_l : float = _move_leg_l_position.distance_to(collision_point_l)
+	var dist_r : float = _move_leg_r_position.distance_to(collision_point_r)
+	#print(dist_l, " | ", dist_r, " ||| ", _move_leg_l_position, " | ", _move_leg_r_position)
+	if dist_l > 1.0:
+		_move_leg_l_position = collision_point_l
+	if dist_r > 1.0:
+		_move_leg_r_position = collision_point_r
+	#_mesh_leg_l.set_global_position(_move_leg_l_position)
+	_mesh_leg_r.set_global_position(_move_leg_r_position)
+	_mesh_leg_l.look_at_from_position(_move_leg_l_position, get_global_position() + Vector3.LEFT.rotated(Vector3.UP, _move_target_rotation.y)*move_stance_spread, Vector3.UP)
+	_mesh_leg_r.look_at_from_position(_move_leg_r_position, get_global_position() + Vector3.RIGHT.rotated(Vector3.UP, _move_target_rotation.y)*move_stance_spread, Vector3.UP)
+
+func _player_rotate(_delta):
+	if _move_target_velocity.length() > 0.1:
+		var current_rotation : Vector3 = _mesh.get_rotation()
+		var goal_rotation := Vector3(0.0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0.0)
+		_move_target_rotation = current_rotation.slerp(goal_rotation, 0.5)
+		_mesh.set_rotation(_move_target_rotation)
+		_ray_node_l.set_position((Vector3.LEFT*move_stance_spread).rotated(Vector3.UP, _move_target_rotation.y))
+		_ray_node_r.set_position((Vector3.RIGHT*move_stance_spread).rotated(Vector3.UP, _move_target_rotation.y))
 
 func _player_upright(_delta):
 	_axis_lock.set_global_rotation(Vector3.ZERO)
@@ -187,20 +251,21 @@ func _player_upright(_delta):
 
 func _player_hover(_delta):
 	var collision_distance : float = player_get_collision_distance()
-	var ray_node : RayCast3D = _ray_node1
-	if hover_ray_predictive:
-		ray_node = _ray_node2
-	var ray_dist1 : float = _ray_node1.get_global_position().y - _ray_node1.get_collision_point().y
-	var ray_dist2 : float = _ray_node2.get_global_position().y - _ray_node2.get_collision_point().y
+	var ray_node : RayCast3D = _ray_node_l
+	ray_node = _ray_node_r
+	var ray_dist_l : float = _ray_node_l.get_global_position().y - _ray_node_l.get_collision_point().y
+	var ray_dist_r : float = _ray_node_r.get_global_position().y - _ray_node_r.get_collision_point().y
 	if ray_node.is_colliding() and player_is_on_floor():
 		var snap_force : float = 0.0
 		if collision_distance > hover_spring_height:
-			snap_force = ray_dist2 - ray_dist1
+			snap_force = ray_dist_r - ray_dist_l
 			#print(Time.get_ticks_msec(), ": Snappin' : ", collision_distance - hover_spring_height, " | ", dist2-dist1)
 		var collision_body : Node3D = ray_node.get_collider()
-		var collision_point : Vector3 = ray_node.get_collision_point()
-		var collision_normal : Vector3 = ray_node.get_collision_normal()
-		DebugTools.draw_cube(collision_point, collision_normal, 0.2, Color.SPRING_GREEN)
+		#var collision_point : Vector3 = ray_node.get_collision_point()
+		var collision_point : Vector3 =  player_get_collision_point(true)
+		#var collision_normal : Vector3 = ray_node.get_collision_normal()
+		var collision_normal : Vector3 = player_get_collision_normal()
+		
 		var collision_impact : float = -velocity.dot(collision_normal)
 		#var ray_dir : Vector3 = _ray_node.get_target_position()
 		var ray_dir : Vector3 = hover_ray_vector*hover_ray_len
@@ -211,14 +276,18 @@ func _player_hover(_delta):
 		var float_force : float = collision_distance - hover_spring_height + snap_force
 		var spring_force : float = (float_force * hover_spring_str) - (relative_velocity * hover_spring_damper)
 
-		if collision_impact > 5.0:
-			pass #//- TODO: Reimplement terrain bounce?
-			#var bounce : Vector3 = (collision_normal * (collision_impact + 0.001)).normalized()
-			#DebugTools.draw_arrow(get_global_position(), collision_point, Color(0.0, 1.0, 0.0, 1.0), 5.0)
-			#DebugTools.draw_arrow(get_global_position() - collision_normal, get_global_position(), Color(0.0, 0.0, 1.0, 1.0), 5.0)
-			#apply_force(ray_dir * spring_force, -collision_normal)
+		apply_central_force(ray_dir * spring_force)
+		if velocity.y < -2.0 and _move_landing_recovery_time <= 0.0:
+			_move_landing_recovery_time = absf(collision_impact)*0.2
+			print("VelY: ", velocity.y, "; Impact: ", collision_impact, " FloatForce: ", float_force, " | Recovery: ", _move_landing_recovery_time)
 		else:
-			apply_central_force(ray_dir * spring_force)
+			_move_landing_recovery_time = maxf(0.0, _move_landing_recovery_time-_delta)
+#			pass #//- TODO: Reimplement terrain bounce?
+#			var bounce : Vector3 = (collision_normal * (collision_impact + 0.001)).normalized()
+#			DebugTools.draw_arrow(get_global_position(), collision_point, Color(0.0, 1.0, 0.0, 1.0), 5.0)
+#			DebugTools.draw_arrow(get_global_position() - collision_normal, get_global_position(), Color(0.0, 0.0, 1.0, 1.0), 5.0)
+#			apply_force(ray_dir * spring_force, -collision_normal)
+#		else:
 		if collision_body.get_class() == "RigidBody3D":
 			collision_body.apply_force(ray_dir * spring_force, collision_point)
 	else:
@@ -259,9 +328,9 @@ func _player_move(delta):
 	var accel_max : float = move_accel_max_force * move_accel_max_force_dot.sample((vel_dot + 1.0)*0.5)
 	needed_accel = needed_accel.limit_length(accel_max) * Vector3(1,0,1) #//- Cap the accel rate force, and remove any influence on gravity/Y-axis
 	apply_force((needed_accel * mass), lean_force)
-	if _move_target_velocity != Vector3.ZERO:
-		#set_rotation(Vector3(0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0))
-		_mesh.set_rotation(Vector3(0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0))
+#	if _move_target_velocity != Vector3.ZERO:
+#		#set_rotation(Vector3(0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0))
+#		_mesh.set_rotation(Vector3(0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0))
 	#DebugTools.draw_arrow(position + lean_force, position)
 
 func _player_jump(delta):
@@ -336,9 +405,13 @@ func _physics_process(delta):
 		_is_on_floor = false
 		_time_on_floor = 0.0
 		_last_on_floor += delta
+
+	if hover_ray_predictive:
+		_player_update_ray(delta)
 	_player_jump(delta)
-	_player_update_ray(delta)
 	_player_move(delta)
+	_player_rotate(delta)
+	_player_update_legs(delta)
 	_player_friction(delta)
 
 func _ready():
@@ -349,6 +422,8 @@ func _ready():
 	#set_inertia(value)
 	set_can_sleep(false)
 	_mesh = get_node("MeshInstance3D")
+	_mesh_leg_l = _mesh.get_node("LegL")
+	_mesh_leg_r = _mesh.get_node("LegR")
 	_axis_lock = get_node("AxisLock")
 	_camera_pivot = _axis_lock.get_node("CameraController")
 	_camera = _camera_pivot.get_node("Camera3D")
