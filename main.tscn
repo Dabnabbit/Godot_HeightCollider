@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://5g7byb24vjxk"]
+[gd_scene load_steps=19 format=3 uid="uid://5g7byb24vjxk"]
 
 [ext_resource type="Script" path="res://clipmap.gd" id="1_o76mq"]
 [ext_resource type="Script" path="res://player_controller.gd" id="1_oh62h"]
@@ -53,17 +53,26 @@ size = Vector3(0.25, 1, 0.25)
 [sub_resource type="BoxMesh" id="BoxMesh_2kfc4"]
 size = Vector3(0.2, 0.2, 0.2)
 
+[sub_resource type="PlaneMesh" id="PlaneMesh_jxjho"]
+size = Vector2(4000, 4000)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_q5067"]
+transparency = 1
+albedo_color = Color(0, 0.47451, 1, 0.6)
+proximity_fade_enabled = true
+proximity_fade_distance = 5.0
+
 [node name="main" type="Node3D"]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.5, 0.866026, 0, -0.866026, 0.5, 0, 0, 0)
+transform = Transform3D(1, 0, 0, 0, -0.676876, 0.736097, 0, -0.736097, -0.676876, 0, 0, 0)
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_a2b87")
 
 [node name="Player" type="RigidBody3D" parent="."]
 unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 28.0976, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 51.7502, 0.652866, -245.82)
 mass = 50.0
 continuous_cd = true
 can_sleep = false
@@ -134,11 +143,12 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
 script = ExtResource("1_o76mq")
 _clipmap_target = NodePath("../Player")
 _clipmap_height_scale = 500.0
+_clipmap_height_offset = 90.0
 _clipmap_levels_count = 7
 _clipmap_collider_enable = true
 _clipmap_collider_resolution = 32
 _clipmap_collider_chunk_count = 1
-_clipmap_target_position = Vector3(0, 0, -11.1196)
+_clipmap_target_position = Vector3(51.7502, 0, -245.82)
 _clipmap_shader_material = ExtResource("3_us76t")
 
 [node name="UI" type="Control" parent="."]
@@ -161,3 +171,8 @@ offset_right = 84.0
 offset_bottom = 34.0
 text = "TEST TEST"
 script = ExtResource("4_peme8")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+visible = false
+mesh = SubResource("PlaneMesh_jxjho")
+surface_material_override/0 = SubResource("StandardMaterial3D_q5067")
