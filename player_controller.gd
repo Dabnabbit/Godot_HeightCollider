@@ -233,8 +233,9 @@ func _player_update_legs(_delta, debug : bool = false):
 func _player_rotate(_delta):
 	if _move_target_velocity.length() > 0.1:
 		var current_rotation : Vector3 = _mesh.get_rotation()
-		var goal_rotation := Vector3(0.0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0.0)
-		_move_target_rotation = current_rotation.slerp(goal_rotation, 0.5)
+		#var goal_rotation := Vector3(0.0, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0.0)
+		#_move_target_rotation = current_rotation.slerp(goal_rotation, 0.5)
+		_move_target_rotation = Vector3(0.0,lerp_angle(current_rotation.y, atan2(-_move_target_velocity.x, -_move_target_velocity.z), 0.5), 0.0)
 		_mesh.set_rotation(_move_target_rotation)
 		_ray_node_l.set_position((Vector3.LEFT*move_stance_spread).rotated(Vector3.UP, _move_target_rotation.y))
 		_ray_node_r.set_position((Vector3.RIGHT*move_stance_spread).rotated(Vector3.UP, _move_target_rotation.y))

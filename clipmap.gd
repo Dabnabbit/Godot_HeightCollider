@@ -15,7 +15,7 @@ extends Node3D
 @export var _clipmap_collider_size : float = 32.0
 @export var _clipmap_collider_resolution : int = 64
 @export var _clipmap_collider_chunk_count : int = 9
-@export var _clipmap_target_position : Vector3
+@export var _clipmap_target_position : Vector3 = Vector3(-1000,0,-1000)
 @export var _clipmap_reinitialize : bool = false :
 	set(_x): _clipmap_reinitialize = false; clipmap_reinitialize()
 @export var _clipmap_vizualize_parts : bool = false : 
@@ -25,10 +25,11 @@ extends Node3D
 var _clipmap_levels : Array[Node3D] = []
 var _clipmap_collider_chunks : Array[CollisionShape3D] = []
 var _clipmap_collider_staticbody : StaticBody3D
+var _clipmap_collider_initialized : bool = false
 var _clipmap_collider_height_image : Image
+var _clipmap_collider_height_image_size : Vector2
 #var _clipmap_collider_holes_image : Image #//-TODO Add support for holes in Terrain with image masking!
 var _clipmap_collider_uv_scale : float 
-var _clipmap_target_last_pos : Vector3
 var _clipmap_editor_updates_enable : bool = true
 
 func clipmap_set_target(x):
@@ -36,8 +37,7 @@ func clipmap_set_target(x):
 	_clipmap_target = x
 	
 func clipmap_update_target_position(target_pos : Vector3):
-	_clipmap_target_last_pos = target_pos
-	_clipmap_target_position = _clipmap_target_last_pos
+	_clipmap_target_position = target_pos
 	_clipmap_shader_material.set_shader_parameter("target_position",_clipmap_target_position)
 
 func clipmap_update_shader():
@@ -45,9 +45,6 @@ func clipmap_update_shader():
 	_clipmap_shader_material.set_shader_parameter("height_offset",_clipmap_height_offset)
 	_clipmap_shader_material.set_shader_parameter("target_position",_clipmap_target_position)
 	_clipmap_shader_material.set_shader_parameter("_debug_shader_enable",_clipmap_vizualize_parts)
-#	#//- DETOX shader
-#	_clipmap_shader_material.set_shader_parameter("height_map",_terrain_HeightMap)
-#	_clipmap_shader_material.set_shader_parameter("height_scale",_terrain_HeightScale)
 
 func clipmap_update_position(level : int, target_position : Vector3):
 	#//-Now we gotta update the ClipMap based on the target movement, SNAP and MOVE those quad-meshes
@@ -56,7 +53,7 @@ func clipmap_update_position(level : int, target_position : Vector3):
 		return false
 	#var node_scale : Vector3 = _clipmap_levels[level].get_scale()
 
-	var level_incr : float = scale.x * pow(2,level)
+	var level_incr : float = get_scale().x * pow(2,level)
 	var level_pos : Vector3 = _clipmap_levels[level].get_position()
 
 	#var diffVec : Vector3 = (target_position - level_pos)
@@ -66,8 +63,8 @@ func clipmap_update_position(level : int, target_position : Vector3):
 	var newX := level_pos.x
 	var newZ := level_pos.z
 	
-	newX = snapped(target_position.x, level_incr)
-	newZ = snapped(target_position.z, level_incr)
+	newX = snapped(target_position.x, level_incr) / get_scale().x
+	newZ = snapped(target_position.z, level_incr) / get_scale().z
 
 	var new_pos : Vector3 = Vector3(newX,0,newZ)
 	_clipmap_levels[level].set_position(new_pos)
@@ -91,7 +88,7 @@ func clipmap_update_position(level : int, target_position : Vector3):
 				gapper_z_pos.z *= -1;
 			if int(new_pos.x / level_scale) % 2 != 0:
 				gapper_x_pos.x *= -1;
-				gapper_z_pos.x = -level_incr;
+				gapper_z_pos.x = -level_incr / get_scale().x;
 			mesh_gapper_x.set_position(gapper_x_pos)
 			mesh_gapper_z.set_position(gapper_z_pos)
 
@@ -107,7 +104,7 @@ func clipmap_initialize():
 	for level in range(_clipmap_levels_count):
 		_clipmap_levels.push_back(clipmap_generate_level(level))
 	if _clipmap_collider_enable:
-		_clipmap_collider_staticbody = clipmap_generate_collider()
+		_clipmap_collider_staticbody = clipmap_initialize_collider()
 		#clipmap_update_collider(_clipmap_target.get_position()*Vector3(1,0,1))
 		str_collider = " and Collider"
 	print("[CLIPMAP] ", get_name(), " Layers (", _clipmap_levels_count, ")", str_collider," generated in ", Time.get_ticks_msec() - time_start, "ms")
@@ -117,28 +114,19 @@ func clipmap_reinitialize():
 	for child in get_children():
 		child.queue_free()
 	#//- Reset the last target position (to force update_position when initialized)
-	_clipmap_target_last_pos = Vector3.ZERO
+	_clipmap_target_position = Vector3.ZERO
 	#call_deferred( "clipmap_initialize")
 	#//- Initialize clipmap again
 	clipmap_initialize()
 
-func clipmap_world_to_height_map_uv(pos : Vector3):
-	#//-SHADER CODE FOR UV COORDS
-	#ivec2 diffuse_map_size = textureSize(diffuse_map, 0);
-	#vec2 pointXY_diffuse = vertex_position.xz * 1.0/vec2(diffuse_map_size) * uv_scale;
-	var height_map_image : Image = _clipmap_shader_material.get_shader_parameter("height_map").get_image()
-	var height_map_uv_scale : float = _clipmap_shader_material.get_shader_parameter("uv_scale")
-	#var height_map_uv_scale : float = _clipmap_shader_material.get_shader_parameter("uv_scale")
-	if not height_map_image:
-		return Vector2.ZERO
-	var height_map_size := Vector2(height_map_image.get_width(), height_map_image.get_height())
-	#print(pos, " | ", fmod_alt(pos.x, height_map_size.x), ", ", fmod_alt(pos.z, height_map_size.y))
-	var pos_uv := (Vector2(fposmod(pos.x * height_map_uv_scale, height_map_size.x), fposmod(-pos.z * height_map_uv_scale, height_map_size.y)) / height_map_size)
-	return pos_uv
+func clipmap_world_to_height_map_pixel(pos_world : Vector3):
+	var pos_pixel := Vector2(fposmod(pos_world.x + (_clipmap_collider_height_image_size.x*0.5), _clipmap_collider_height_image_size.x), fposmod(pos_world.z + (_clipmap_collider_height_image_size.y*0.5), _clipmap_collider_height_image_size.y))
+	return pos_pixel
 
-func clipmap_generate_collider():
+func clipmap_initialize_collider():
 	#//- TODO: This fails to get_image() when the HeightMap is a NoiseTexture
 	_clipmap_collider_height_image = _clipmap_shader_material.get_shader_parameter("height_map").get_image()
+	_clipmap_collider_height_image_size = Vector2(_clipmap_collider_height_image.get_width(), _clipmap_collider_height_image.get_height())
 	_clipmap_collider_uv_scale = _clipmap_shader_material.get_shader_parameter("uv_scale")
 	if not _clipmap_collider_height_image:
 		print("[CLIPMAP] ", get_name(), " Failed to generate Collider, missing Height Map")
@@ -150,6 +138,7 @@ func clipmap_generate_collider():
 
 	_clipmap_collider_chunks.clear()
 	for chunk in range(_clipmap_collider_chunk_count):
+		print("makin collider")
 		var height_map_shape := HeightMapShape3D.new()
 		var collider := CollisionShape3D.new()
 		collider.set_name("ClipMapCollider_"+str(chunk))
@@ -165,8 +154,7 @@ func clipmap_update_collider(chunk : int, target_position : Vector3):
 		print("[CLIPMAP] ERROR: Attempted to update nonexistant ClipMap Collider Chunk")
 		return false
 
-	var clipmap_collider = _clipmap_collider_chunks[chunk]
-	var height_map_shape : HeightMapShape3D = clipmap_collider.get_shape()
+	var clipmap_collider : CollisionShape3D = _clipmap_collider_chunks[chunk]
 
 	var newX = snapped(target_position.x, _clipmap_collider_size / _clipmap_collider_resolution)
 	var newZ = snapped(target_position.z, _clipmap_collider_size / _clipmap_collider_resolution)
@@ -176,14 +164,18 @@ func clipmap_update_collider(chunk : int, target_position : Vector3):
 	var clipmap_collider_pos = clipmap_staticbody_pos + clipmap_collider_offset
 	var clipmap_target_pos := Vector3(newX, target_position.y, newZ)
 
-	if abs(clipmap_collider_pos.x - target_position.x) < _clipmap_collider_size * 0.5 and abs(clipmap_collider_pos.z - target_position.z) < _clipmap_collider_size * 0.5:
+	if _clipmap_collider_initialized and abs(clipmap_collider_pos.x - target_position.x) < _clipmap_collider_size * 0.5 and abs(clipmap_collider_pos.z - target_position.z) < _clipmap_collider_size * 0.5:
 		return
+	_clipmap_collider_initialized = true
+	clipmap_generate_collider(clipmap_collider, clipmap_target_pos)
 
+func clipmap_generate_collider(collider_shape : CollisionShape3D, pos : Vector3):
+	var height_map_shape : HeightMapShape3D = collider_shape.get_shape()
 	var collider_scale := _clipmap_collider_size / float(_clipmap_collider_resolution)
-	_clipmap_collider_staticbody.set_position(clipmap_target_pos - Vector3(collider_scale, 0, collider_scale) * 0.5) #//- Gotta offset the collision mesh by a bit to get it all to line up properly
+	_clipmap_collider_staticbody.set_position(pos - Vector3(collider_scale, 0, collider_scale) * 0.5) #//- Gotta offset the collision mesh by a bit to get it all to line up properly
 	_clipmap_collider_staticbody.set_scale(Vector3(collider_scale, 1.0, collider_scale))
 
-	var height_map_array : Array[float] = clipmap_sample_height_map(clipmap_target_pos, _clipmap_collider_size, _clipmap_collider_resolution)
+	var height_map_array : Array[float] = clipmap_sample_height_map(pos, _clipmap_collider_size, _clipmap_collider_resolution)
 	height_map_shape.set_map_width(_clipmap_collider_resolution)
 	height_map_shape.set_map_depth(_clipmap_collider_resolution)
 	height_map_shape.set_map_data(height_map_array)
@@ -192,42 +184,26 @@ func clipmap_update_collider(chunk : int, target_position : Vector3):
 func clipmap_sample_height_map(pos : Vector3, sample_size : float, num_points : float):
 	var time_start := Time.get_ticks_msec()
 	#print("[CLIPMAP] ", get_name(), " HeightMap Sampling")
-	var height_map_uv_scale : float = _clipmap_shader_material.get_shader_parameter("uv_scale")
-	var height_map_size := Vector2(_clipmap_collider_height_image.get_width(), _clipmap_collider_height_image.get_height())
-
-#	pos += Vector3(size / num_points, 0, size / num_points) * 0.5
-
-	var height_map_center_pos_uv : Vector2 = (Vector2(fposmod(pos.x * height_map_uv_scale, height_map_size.x), fposmod(-pos.z * height_map_uv_scale, height_map_size.y)) / height_map_size)
-	var height_map_center_pos_pixel := height_map_center_pos_uv * height_map_size
-
-	var time_check1 := Time.get_ticks_msec()
-
-	var height_map_sample_incr := (height_map_uv_scale * sample_size) / num_points
-	#var height_map_world_incr := Vector2(sample_size, sample_size) / num_points
+	var height_map_world_incr := Vector3(sample_size, 0, sample_size) / num_points
 	var height_map_array : Array[float] = []
 	var count := 0
-	for y in range(-num_points*0.5, num_points*0.5):
+	for y in range(num_points*0.5, -num_points*0.5, -1):
 		for x in range(-num_points*0.5, num_points*0.5):
-			#var debug_size = 0.5
-			#var offset_world := Vector2(x, -y) * height_map_world_incr
-			var offset_pixel := Vector2(x, -y) * height_map_sample_incr
-			var height_map_pixel := Vector2(fposmod(height_map_center_pos_pixel.x + offset_pixel.x, height_map_size.x), fposmod(height_map_center_pos_pixel.y + offset_pixel.y, height_map_size.y))
-			var height_map_value : float = _clipmap_collider_height_image.get_pixelv(height_map_pixel).r
-			#var debug_pos := Vector3(pos.x + offset_world.x, height_map_value * _clipmap_height_scale - _clipmap_height_offset, pos.z - offset_world.y)
-			#var debug_color : Color = lerp(Color.GREEN, Color.RED, height_map_value*3)
-			#DebugTools.draw_cube(debug_pos, Vector3.ZERO, 0.5, debug_color, 5.0, count/(num_points*num_points))
-			#clipmap_spawn_debugbox(debug_pos, 0.5, debug_color, 5.0, count/(num_points*num_points))
+			var offset_world : Vector3 = Vector3(x, 0, -y) * height_map_world_incr
+			var pixel_pos : Vector2 = clipmap_world_to_height_map_pixel(pos + offset_world)
+			var height_map_value : float = _clipmap_collider_height_image.get_pixelv(pixel_pos).r
+#			var debug_pos := Vector3(pos.x + offset_world.x, height_map_value * _clipmap_height_scale - _clipmap_height_offset, pos.z + offset_world.z)
+#			var debug_color : Color = lerp(Color.GREEN, Color.RED, height_map_value*3)
+#			DebugTools.draw_cube(debug_pos, Vector3.ZERO, 0.5, debug_color, 5.0, count/(num_points*num_points))
 			#//- Punch a hole at 0,0 for testing
 #			if y == 0 and x == 0:
 #				height_map_array.push_back(-INF)
 #			else:
 #				height_map_array.push_back(height_map_value * _clipmap_height_scale - _clipmap_height_offset)
-#			var rounding : float = 1.00
-#			height_map_array.push_back(float(int((height_map_value * _clipmap_height_scale - _clipmap_height_offset)*rounding)) / rounding)
 			height_map_array.push_back(height_map_value * _clipmap_height_scale - _clipmap_height_offset)
 			count += 1
 	var time_end := Time.get_ticks_msec()
-	print("[CLIPMAP] ", get_name(), " HeightMap Sampled with ", count," points in ", time_end - time_start, "ms, (", time_check1 - time_start, "ms, ", time_end - time_check1, "ms)")
+	print("[CLIPMAP] ", get_name(), " HeightMap Sampled with ", count," points in ", time_end - time_start, "ms")
 	return height_map_array
 
 func clipmap_generate_level(level : int):
@@ -520,9 +496,14 @@ func _ready():
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(_delta):
 	var target_pos : Vector3 = clipmap_get_target_position()
+
+#	var test_pos := clipmap_world_to_height_map_pixel(target_pos)
+#	var height_map_value : float = _clipmap_collider_height_image.get_pixelv(test_pos).r * _clipmap_height_scale
+#	DebugTools.draw_cube(Vector3(target_pos.x, height_map_value, target_pos.z), Vector3.ZERO, 0.5, Color.RED, 5.0)
+
 	target_pos *= Vector3(1, 0, 1)
 	if _clipmap_collider_enable:
 		clipmap_update_collider(0, target_pos) #//- TODO, come fix this
-	if target_pos != Vector3.ZERO and Vector3(_clipmap_target_last_pos.x, 0, _clipmap_target_last_pos.z).distance_to(target_pos) > (1.0 / get_scale().x):
+	if target_pos != Vector3.ZERO and Vector3(_clipmap_target_position.x, 0, _clipmap_target_position.z).distance_to(target_pos) > (1.0 / get_scale().x):
 		clipmap_update_position(0, target_pos)
 		clipmap_update_target_position(target_pos)

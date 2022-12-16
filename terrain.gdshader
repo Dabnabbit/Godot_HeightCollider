@@ -1,110 +1,161 @@
 shader_type spatial;
+
 render_mode world_vertex_coords;
-//render_mode world_vertex_coords, diffuse_toon;
 //render_mode world_vertex_coords, diffuse_toon, specular_toon;
 
-//uniform bool test_horizon = false;
-uniform sampler2D diffuse_map;
-uniform sampler2D height_map;
+uniform bool _debug_shader_enable = false;
+uniform bool _debug_show_height = false;
+uniform bool _debug_show_normals = false;
+uniform float _debug_flat_shade : hint_range(0.0, 1.0) = 0.0;
+
+uniform sampler2D diffuse_map : source_color;
+uniform sampler2D height_map : hint_default_black;
 uniform sampler2D normal_map : hint_normal;
-uniform bool normal_enable_vert = true;
-uniform float normal_frag_scale : hint_range(0.0, 1.0) = 1.0;
-uniform float uv_scale = 1.0;
+uniform float normal_scale_frag : hint_range(0.0, 1.0) = 0.0;
+uniform float normal_scale_texture : hint_range(0.0, 1.0) = 0.0;
+uniform float normal_smoothing = 1.0;
+//uniform float height_scale : hint_range(0.0,128.0) = 1.0;
 uniform float height_scale = 1.0;
 uniform float height_offset = 0.0;
+uniform float uv_scale = 1.0;
+
+uniform float horizon_power = 0.0;
+uniform float horizon_start = 500.0;
+uniform float horizon_end = 5000.0;
 
 uniform float metallic : hint_range(0.0, 1.0) = 0.0;
-uniform float roughness : hint_range(0.0, 1.0) = 0.025;
+uniform float roughness : hint_range(0.0, 1.0) = 0.0;
 
 uniform vec3 target_position;
 
-uniform bool _debug_shader_enable = false;
-uniform bool _diffuse_color_blend = false;
+//varying flat vec3 vertex_position; //- Use this technique to make pixelated flat shaded normals!
+varying smooth vec3 vertex_position;
+varying vec3 vertex_normal;
+varying float vertex_height;
 
-uniform mat3 normal_basis;
+vec3 xform(mat4 matrix, vec3 position, const float w){
+	return (matrix * vec4(position, w)).xyz;
+}
 
-//uniform sampler2D normal_map;
-varying vec3 vertex_position;
-varying vec3 vertex_normals;
-//varying vec3 pixel_normals;
-varying float height;
-varying vec3 vertex_color;
+vec4 sample_texture(sampler2D texture_map, vec3 position) {
+	vec2 size = vec2(textureSize(texture_map, 0));
+	vec2 scale = size / (uv_scale*2.0);
+
+	mat4 terrainToWorld = mat4(1);
+	terrainToWorld[0] *= scale.x*2.0;
+	terrainToWorld[1] *= height_scale;
+	terrainToWorld[2] *= scale.y*2.0;
+	terrainToWorld[3].xyz = vec3(-scale.x,0,-scale.y);
+
+	position = xform(inverse(terrainToWorld), position, 1.0);
+	vec4 pixel = textureLod(texture_map, position.xz, 0);
+	return pixel;
+}
+
+vec4 sample_texture2(sampler2D texture_map, vec3 position) {
+	vec2 size = vec2(textureSize(texture_map, 0));
+	vec2 scale = size / (uv_scale*2.0);
+
+	mat4 terrainToWorld = mat4(1);
+	terrainToWorld[0] *= scale.x*2.0;
+	terrainToWorld[1] *= height_scale;
+	terrainToWorld[2] *= scale.y*2.0;
+	terrainToWorld[3].xyz = vec3(-scale.x,0,-scale.y);
+
+	position = xform(inverse(terrainToWorld), position, 1.0);
+	vec4 pixel = textureLod(texture_map, position.xz, 0);
+	float epsilon = 0.0005;
+	vec4 pixel2 = textureLod(texture_map, position.xz + vec2(-epsilon, 0), 0);
+	vec4 pixel3 = textureLod(texture_map, position.xz + vec2(epsilon, 0), 0);
+	vec4 pixel4 = textureLod(texture_map, position.xz + vec2(0, -epsilon), 0);
+	vec4 pixel5 = textureLod(texture_map, position.xz + vec2(0, epsilon), 0);
+	//return (pixel + ((pixel2 + pixel3 + pixel4 + pixel5) * 0.25))*0.5;
+	//return (pixel2 + pixel3 + pixel4 + pixel5) * 0.25;
+	return (pixel + pixel2 + pixel3 + pixel4 + pixel5) * 0.2;
+}
+vec3 sample_normal(vec3 position) {
+	float epsilon = normal_smoothing;
+	float sample_left = sample_texture(height_map, position + vec3(-epsilon, 0, 0)).x * height_scale;
+	float sample_right = sample_texture(height_map, position + vec3(epsilon, 0, 0)).x * height_scale;
+	float sample_up = sample_texture(height_map, position + vec3(0, 0, -epsilon)).x * height_scale;
+	float sample_down = sample_texture(height_map, position + vec3(0, 0, epsilon)).x * height_scale;
+	vec2 g = vec2(sample_right-sample_left, sample_down-sample_up) / epsilon; //-Four Samples, difference across point
+	vec3 normals = normalize(vec3(-g.x, 1.0, -g.y));
+	return normals;
+}
+
+vec3 sample_normal2(vec3 position) {
+	float epsilon = normal_smoothing;
+	float sample_left = sample_texture2(height_map, position + vec3(-epsilon, 0, 0)).x * height_scale;
+	float sample_right = sample_texture2(height_map, position + vec3(epsilon, 0, 0)).x * height_scale;
+	float sample_up = sample_texture2(height_map, position + vec3(0, 0, -epsilon)).x * height_scale;
+	float sample_down = sample_texture2(height_map, position + vec3(0, 0, epsilon)).x * height_scale;
+	vec2 g = vec2(sample_right-sample_left, sample_down-sample_up) / epsilon; //-Four Samples, difference across point
+	vec3 normals = normalize(vec3(-g.x, 1.0, -g.y));
+	return normals;
+}
 
 vec3 unpack_normalmap(vec4 rgba) {
 	vec3 result = rgba.xzy * 2.0 - vec3(1.0);
-	//result *= -1.0;
+	result.xz *= -1.0;
+	//result.y *= -1.0;
 	return result;
 }
 
-vec3 getNormal(vec2 uv, float texelSize) {
-	float t = texture(height_map, uv + vec2(texelSize * vec2(0.0, -1.0))).r * height_scale;
-	float r = texture(height_map, uv + vec2(texelSize * vec2(1.0, 0.0))).r * height_scale;
-	float l = texture(height_map, uv + vec2(texelSize * vec2(-1.0, 0.0))).r * height_scale;
-	float b = texture(height_map, uv + vec2(texelSize * vec2(0.0, 1.0))).r * height_scale;
-	
-	//return -normalize(vec3(2.0 * (r - l), 2.0 * (b - t), -4.0));
-	return -normalize(vec3((r - l), (b - t),-1.0));
-}
-
 void vertex() {
-	//vertex_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	vertex_position = VERTEX.xyz;
-	
-	ivec2 height_map_size = textureSize(height_map, 0);
-	float height_incr = 1.0/float(height_map_size.x);
-	
-	float pointX = (vertex_position.x / float(height_map_size.x)) * uv_scale;
-	float pointY = (-vertex_position.z / float(height_map_size.y)) * uv_scale;
-	vec2 pointXY = vec2(pointX, pointY);
-	vec2 offsetXY = vec2(height_incr * 0.5, height_incr * 0.5);
-	
-	height = textureLod(height_map, pointXY + offsetXY, 0.0).x;
-	//VERTEX.y += (height * height_scale) - ((height_scale * 0.5) + height_offset);
-	VERTEX.y += (height * height_scale) - (height_offset);
-	vertex_position = VERTEX.xyz;
-	//---------------------------------------------------------------------------------
-	//- NORMALS
-	//NORMAL = getNormal(UV, height_incr);
-	NORMAL = getNormal(pointXY, 1.0 / float(textureSize(height_map, 0).x));
-}
+	vertex_position = VERTEX;
+	vec3 half_pixel = vec3(0.0, 0, 0.0);
+	half_pixel = vec3(0.5, 0, 0.5);
+	vertex_height = sample_texture(height_map, vertex_position + half_pixel).x * height_scale;
+	NORMAL = sample_normal2(vertex_position + half_pixel);
+	VERTEX.y = vertex_height - height_offset;
+	vertex_normal = NORMAL;
+	vertex_position = VERTEX + half_pixel;
 
+	//---------------------------------------------------------------------------------
+	//- HORIZON DEFORM
+	float dist = max(distance((vertex_position + half_pixel).xz, target_position.xz),0.0001);
+	float power = horizon_power;
+	float negate = 1.0;
+	//VERTEX.y -= smoothstep(horizon_start, horizon_end, dist)*pow(1.0+(horizon_power*0.01),dist);
+	//- Apparently 0^0 fails to return a value, so don't use that...
+	if(power < 0.0) {
+		power *= -1.0;
+		negate *= -1.0;
+	}
+	VERTEX.y -= negate * smoothstep(horizon_start, max(horizon_end, horizon_start), dist)*pow(dist, power);
+}
 
 void fragment() {
-	ivec2 height_map_size = textureSize(height_map, 0);
-	ivec2 diffuse_map_size = textureSize(diffuse_map, 0);
-	ivec2 normal_map_size = textureSize(normal_map, 0);
-	vec2 height_incr = 1.0/vec2(height_map_size);
-	vec2 diffuse_incr = 1.0/vec2(diffuse_map_size);
-	vec2 normal_incr = 1.0/vec2(normal_map_size);
-	vec2 pointXY_height = vertex_position.xz * height_incr * uv_scale; //- Multiplied the new vertex/pixel position by the heightmap increment (pixel ratio), multiplied by uniform UV scale
-	vec2 pointXY_diffuse = vertex_position.xz * diffuse_incr * uv_scale;
-	vec2 pointXY_normals = vertex_position.xz * normal_incr * uv_scale; //- Multiplied the new vertex/pixel position by the heightmap increment (pixel ratio), multiplied by uniform UV scale
-	pointXY_height.y *= -1.0; //- Gotta flip the Z axis because Godot, which is now the Y axis in 2D
-	pointXY_diffuse.y *= -1.0; //- Gotta flip the Z axis because Godot, which is now the Y axis in 2D
-	pointXY_normals.y *= -1.0; //- Gotta flip the Z axis because Godot, which is now the Y axis in 2D
+//	float dist = clamp(distance((vertex_position).xz, target_position.xz) * 0.0005, 0.0, 1.0);
+	vec3 normals_frag = sample_normal(vertex_position);
+	normals_frag = xform(VIEW_MATRIX, normals_frag, 0.0).xyz;
+	//NORMAL = mix(NORMAL, normals_frag, dist);
+	NORMAL = mix(NORMAL, normals_frag, normal_scale_frag);
 
-	//vec3 pixel_normals = normal_basis * unpack_normalmap(texture(normal_map, pointXY_normals));
-	vec3 pixel_normals = normal_basis * unpack_normalmap(texture(normal_map, UV));
-	pixel_normals = normalize(pixel_normals);
-	pixel_normals = (VIEW_MATRIX * (vec4(pixel_normals,0.0))).xyz;
-	//NORMAL = normalize(NORMAL + pixel_normals.rgb);
-	//NORMAL = mix(NORMAL, pixel_normals.rgb, normal_frag_scale);
-//	NORMAL = pixel_normals.rgb;
+	vec3 normals_texture = mat3(1.0) * unpack_normalmap(sample_texture(normal_map, vertex_position));
+	normals_texture = normalize(normals_texture);
+	normals_texture = xform(VIEW_MATRIX, normals_texture, 0.0).xyz;
+	NORMAL = mix(NORMAL, normals_texture.rgb, normal_scale_texture);
+	vec3 point = xform(VIEW_MATRIX, vertex_position, 1.0);
+	vec3 normals_flat = normalize(cross(dFdy(point), dFdx(point)));
+	if(SCREEN_UV.x < _debug_flat_shade){
+		NORMAL = normals_flat;
+	}
 
-	//crossdFdx(pointXY_normals)
-
-	ALBEDO = texture(diffuse_map, pointXY_diffuse).xyz;
-	if(_diffuse_color_blend) {
-		ALBEDO = mix(vec3(0.5), texture(height_map, pointXY_height).xyz,1.0);
-		ALBEDO *= mix(vec3(0.9,0.8,0.8), vec3(0.2,0.9,0.0), smoothstep(-0.5, 10.0, vertex_position.y));
+	vec4 diffuse = sample_texture(diffuse_map, vertex_position);
+	ALBEDO = diffuse.rgb;
+	if(_debug_show_height) {
+		ALBEDO = vec3(vertex_height / height_scale);
+	}
+	if(_debug_show_normals) {
+		ALBEDO = NORMAL;
 	}
 	if(_debug_shader_enable) {
-		ALBEDO *= vertex_color;
+		ALBEDO *= COLOR.rgb;
 	}
 	ALBEDO *= 0.1;
-	//ALBEDO = vertex_normals;
-	//ALBEDO = vec3(0.5);
-	//ALPHA = 1.0;
+	//SPECULAR = 0.0;
 	METALLIC = metallic;
  	ROUGHNESS = roughness;
 	RIM = 0.0;
