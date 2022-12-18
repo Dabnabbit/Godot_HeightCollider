@@ -484,7 +484,7 @@ func clipmap_generate_mesh_seam(vertex_color : Color = Color.MAGENTA):
 func clipmap_get_target_position():
 	var target_pos := Vector3.ZERO
 	if _clipmap_editor_updates_enable:
-		target_pos = %Player.get_position()
+		target_pos = get_parent().get_node("Player").get_position()
 	elif _clipmap_target:
 		target_pos = _clipmap_target.get_position() / get_scale()
 	return target_pos

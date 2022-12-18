@@ -323,7 +323,6 @@ func _player_move(delta):
 	#//-TODO: Improve surface normal calculations, perhaps based on surface type, friction, etc? Hard Cap?
 	var collision_normal : Vector3 = player_get_collision_normal()
 	goal_vel *= (goal_vel.normalized().dot(collision_normal)*move_angle_multiplier+1.0)
-
 	_move_target_velocity = _move_target_velocity.move_toward(goal_vel, accel * delta) 
 	var needed_accel : Vector3 = (_move_target_velocity - velocity) / delta
 	var accel_max : float = move_accel_max_force * move_accel_max_force_dot.sample((vel_dot + 1.0)*0.5)
@@ -406,7 +405,6 @@ func _physics_process(delta):
 		_is_on_floor = false
 		_time_on_floor = 0.0
 		_last_on_floor += delta
-
 	if hover_ray_predictive:
 		_player_update_ray(delta)
 	_player_jump(delta)
@@ -432,7 +430,6 @@ func _ready():
 
 func _input(event):
 	_input_direction = Input.get_vector("run_left", "run_right", "run_forward", "run_back")
-
 	if Input.is_action_pressed("jump"):
 		_is_pressing_jump = true
 	else:

@@ -2,7 +2,6 @@ extends Label
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(_delta):
-	#var player : CharacterBody3D = %Player
 	var player : PlayerController = %Player
 	var vel : Vector3 = player.get_linear_velocity()
 	var pos : Vector3 = player.get_position()

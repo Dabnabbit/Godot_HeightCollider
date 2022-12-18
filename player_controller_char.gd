@@ -48,35 +48,6 @@ func _player_get_float(delta):
 	var spring_force : float = (x * spring_str) - (rel_vel * spring_damper)
 
 func _physics_process(delta):
-	if _ray_node.is_colliding():
-		var collision_point : Vector3 = _ray_node.get_collision_point()
-		var collision_normal : Vector3 = _ray_node.get_collision_normal()
-		var collision_impact := -velocity.dot(collision_normal)
-		var ground_dist : float = position.y - collision_point.y
-		if velocity.length() > 2.0:
-			print(collision_impact)
-		
-		if ground_dist < _player_float_current:
-			if collision_impact > 20.0:
-				_player_float_current = 0.25
-				_mesh.set_scale(Vector3(1, 0.9, 1))
-				_mesh.set_position(Vector3(0, 0.1, 0))
-			else:
-				_player_float_current = lerp(_player_float_current, _player_float_max, 0.3)
-				_mesh.set_scale(lerp(_mesh.get_scale(), Vector3.ONE, 0.3))
-				_mesh.set_position(lerp(_mesh.get_position(), Vector3.ZERO, 0.3))
-			#print(_ray_node.get_collider().get_name(), "; Dist: ", ground_dist, " | Pos: ", position.y, " | Col:", _player_float_current, " + ", _player_float, " = ", collision_point.y+_player_float_current)
-			position.y = max(position.y, collision_point.y + _player_float_current)
-			velocity.y = 0.0
-			_is_on_floor = true
-			DebugTools.draw_arrow(collision_point, collision_point+collision_normal*1.0, Color(0.0, 0.8, 0.8, 1.0), 5.0)
-			if collision_impact > 15.0:
-				var collision_bounce := collision_normal * (collision_impact*0.25 + 0.001)
-				velocity += collision_bounce
-				DebugTools.draw_arrow(collision_point-(velocity*delta*4.0), collision_point, Color(0.1, 1.0, 0.0, 1.0), 5.0)
-				DebugTools.draw_arrow(collision_point, collision_point+(collision_bounce*delta*4.0), Color(0.0, 1.0, 0.1, 1.0), 5.0)
-	else:
-		_is_on_floor = false
 	if inputDirection != Vector2.ZERO:
 		var newDir := Vector3(inputDirection.x, 0, inputDirection.y).rotated(Vector3.UP, $CameraController.rotation.y)
 		velocity += newDir * moveSpeed * delta
@@ -183,17 +154,16 @@ func _physics_process(delta):
 
 func _ready():
 	set_up_direction(Vector3.UP)
-	_ray_node = get_node("RayCast3D")
 	_mesh = get_node("MeshInstance3D")
 
 func _input(event):
 	pass
-	inputDirection = Input.get_vector("Run_Left", "Run_Right", "Run_Forward", "Run_Back")
-	if Input.is_action_pressed("Jump"):
+	inputDirection = Input.get_vector("run_left", "run_right", "run_forward", "run_back")
+	if Input.is_action_pressed("jump"):
 		_is_jumping = true
 	else:
 		_is_jumping = false
-	if Input.is_action_pressed("Mouse_Capture") and Time.get_ticks_msec() > mouseLastEnable + 500:
+	if Input.is_action_pressed("mouse_capture") and Time.get_ticks_msec() > mouseLastEnable + 500:
 		mouseLastEnable = Time.get_ticks_msec()
 		if Input.get_mouse_mode() == Input.MOUSE_MODE_VISIBLE:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
